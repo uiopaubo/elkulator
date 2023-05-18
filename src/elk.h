@@ -189,6 +189,10 @@ extern int usedrom6;
 
 extern int firstbyte;
 
+extern int enable_mgc;
+extern int enable_db_flash_cartridge;
+extern int enable_jim;
+
 extern int keylookup[128];
 extern int plus1;
 extern uint8_t plus1stat;
@@ -235,6 +239,7 @@ void mixbuffer(int16_t *d);
 void givealbufferdd(int16_t *buf);
 
 void loadroms();
+void loadrom_n(int, char *fn);
 void resetmem();
 void dumpram();
 void loadcart(char *fn);

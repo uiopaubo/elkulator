@@ -12,6 +12,9 @@ int sndint;
 int firstbyte;
 int defaultwriteprot;
 int joffset;
+int enable_mgc;
+int enable_db_flash_cartridge;
+int enable_jim;
 
 char *getstringcfg(char *name)
 {
@@ -95,6 +98,7 @@ void loadconfig()
         mrb=getintcfg("mrb",0);
         mrbmode=getintcfg("mrbmode",0);
         ulamode=getintcfg("ulamode",0);
+        enable_jim = getintcfg("enable_jim",0);
 
         drawmode=getintcfg("filter",0);
         
@@ -132,6 +136,10 @@ void loadconfig()
                 keylookup[c]=getintcfg(s2,c);
         }
 
+        /* Cartridge expansions */
+        enable_mgc = getintcfg("enable_mgc", 0);
+        enable_db_flash_cartridge = getintcfg("enable_db_flash_cartridge", 0);
+
         fclose(cfgfile);
 }
 
@@ -156,6 +164,7 @@ void saveconfig()
         writeintcfg("mrb",mrb);
         writeintcfg("mrbmode",mrbmode);
         writeintcfg("ulamode",ulamode);
+        writeintcfg("enable_jim", enable_jim);
         
         writeintcfg("filter",drawmode);
         
@@ -179,6 +188,10 @@ void saveconfig()
                 sprintf(s,"key_define_%03i",c);
                 writeintcfg(s,keylookup[c]);
         }
+
+        /* Cartridge expansions */
+        writeintcfg("enable_mgc", enable_mgc);
+        writeintcfg("enable_db_flash_cartridge", enable_db_flash_cartridge);
 
         fclose(cfgfile);
 }

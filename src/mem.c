@@ -15,15 +15,35 @@ int output,timetolive;
 int mrbmapped=0;
 int plus1=0;
 uint8_t readkeys(uint16_t addr);
+uint8_t rombanks[16][16384];
+uint8_t rombank_enabled[16];
+
 uint8_t ram[32768],ram2[32768];
 uint8_t os[16384],mrbos[16384];
-uint8_t basic[16384],adfs[16384],dfs[16384];
-uint8_t rom12[16384],rom13[16384],ram6[16384];
-uint8_t sndrom[16384];
-uint8_t plus1rom[16384];
+/* Use pointers to refer to banks in the general rombanks array. */
+#define DFS_BANK 3
+#define PLUS1_BANK 12
+#define SOUND_BANK 13
+#define ADFS_BANK 15
+uint8_t *basic;
+uint8_t *adfs;
+uint8_t *dfs;
+uint8_t *sndrom;
+uint8_t *plus1rom;
 uint8_t sndlatch;
 int snden=0;
 int usedrom6=0;
+uint8_t ram6[16384];
+/* Banked cartridge support providing space for multiple ROMS, added for the
+   Mega Games Cartridge */
+#define NUM_BANKS 256
+uint8_t cart0[NUM_BANKS * 16384],cart1[NUM_BANKS * 16384];
+uint8_t banks[2];
+/* Banks accessible via the JIM page, controlled by the paging register at
+   &fcff. */
+#define JIM_BANKS 128
+uint8_t jim_ram[JIM_BANKS][256];
+int jim_page = 0;
 
 void loadrom(uint8_t dest[16384], char *name)
 {
@@ -36,9 +56,38 @@ void loadrom(uint8_t dest[16384], char *name)
     fclose(f);
 }
 
+void loadrom_n(int bank, char *name)
+{
+    loadrom(rombanks[bank], name);
+    rombank_enabled[bank] = 1;
+}
+
+void update_rom_config(void)
+{
+    rombank_enabled[PLUS1_BANK] = plus1;
+    rombank_enabled[SOUND_BANK] = sndex;
+    rombank_enabled[ADFS_BANK] = (plus3 && adfsena);
+    rombank_enabled[DFS_BANK] = (plus3 && dfsena);
+}
+
 void loadroms()
 {
-        FILE *f;
+        for (int i = 0; i < 16; i++) {
+            memset(rombanks[i], 0, 16384);
+            rombank_enabled[i] = 0;
+        }
+
+        /* Clear paged RAM. */
+        for (int i = 0; i < JIM_BANKS; i++) {
+            memset(jim_ram[i], 0, 256);
+        }
+
+        dfs = rombanks[DFS_BANK];
+        basic = rombanks[0xa];
+        plus1rom = rombanks[PLUS1_BANK];
+        sndrom = rombanks[SOUND_BANK];
+        adfs = rombanks[ADFS_BANK];
+
         char path[512],p2[512];
         getcwd(p2,511);
         sprintf(path,"%sroms",exedir);
@@ -47,6 +96,7 @@ void loadroms()
         loadrom(os, "os");
         loadrom(mrbos, "os300.rom");
         loadrom(basic, "basic.rom");
+        memcpy(rombanks[0xb], basic, 16384);
         loadrom(adfs, "adfs.rom");
         loadrom(dfs, "dfs.rom");
         loadrom(sndrom, "sndrom");
@@ -58,7 +108,7 @@ void loadcart(char *fn)
 {
         FILE *f=fopen(fn,"rb");
         if (!f) return;
-        fread(rom12,16384,1,f);
+        fread(cart0,NUM_BANKS * 16384,1,f);
         fclose(f);
 }
 
@@ -66,14 +116,14 @@ void loadcart2(char *fn)
 {
         FILE *f=fopen(fn,"rb");
         if (!f) return;
-        fread(rom13,16384,1,f);
+        fread(cart1,NUM_BANKS * 16384,1,f);
         fclose(f);
 }
 
 void unloadcart()
 {
-        memset(rom12,0,16384);
-        memset(rom13,0,16384);
+        memset(cart0,0,NUM_BANKS * 16384);
+        memset(cart1,0,NUM_BANKS * 16384);
 }
 
 void dumpram()
@@ -85,8 +135,18 @@ void dumpram()
 
 void resetmem()
 {
+        update_rom_config();
+
         FASTLOW=turbo || (mrb && mrbmode);
         FASTHIGH2=(mrb && mrbmode==2);
+        banks[0] = 0;
+        banks[1] = 0;
+        if (enable_mgc) {
+            fprintf(stderr, "ROM slot 0 bank = %i\n", banks[0]);
+        }
+
+        /* Initialise the current RAM bank paged into page FD (JIM). */
+        jim_page = 0;
 }
 
 uint8_t readmem(uint16_t addr)
@@ -113,30 +173,51 @@ uint8_t readmem(uint16_t addr)
                         if (intrombank&2) return basic[addr&0x3FFF];
                         return readkeys(addr);
                 }
-                if (rombank==0x0) return rom12[addr&0x3FFF];
-                if (rombank==0x1) return rom13[addr&0x3FFF];
-                if (plus1 && rombank==0xC) return plus1rom[addr&0x3FFF];
-                if (sndex && rombank==0xD) return sndrom[addr&0x3FFF];
-                if (rombank==0xF && plus3 && adfsena) return adfs[addr&0x3FFF];
-                if (rombank==0x3 && plus3 && dfsena)  return dfs[addr&0x3FFF];
+                /* Treat cartridges specially for now. */
+                if (rombank==0) return cart0[(banks[0] * 16384) + (addr&0x3FFF)];
+                if (rombank==1) return cart1[(banks[1] * 16384) + (addr&0x3FFF)];
+
+                /* Handle other ROMs. */
+                if (rombank_enabled[rombank])
+                    return rombanks[rombank][addr & 0x3fff];
+
                 if (rombank==0x6) return ram6[addr&0x3FFF];
-//                if (rombank==0) return game[addr&0x3FFF];
+
                 return addr>>8;
         }
-        if ((addr&0xFF00)==0xFC00 || (addr&0xFF00)==0xFD00)
+        switch (addr&0xFF00) {
+        case 0xFC00:
         {
-                if ((addr&0xFFF8)==0xFCC0 && plus3) return read1770(addr);
-                if (addr==0xFCC0 && firstbyte) return readfirstbyte();
-                if (plus1)
-                {
-                        if (addr==0xFC70) return readadc();
-                        if (addr==0xFC72) return getplus1stat();
-                }
-                if (addr>=0xFC60 && addr<=0xFC6F && plus1) return readserial(addr);
-//                if ((addr&~0x1F)==0xFC20) return readsid(addr);
+            if ((addr&0xFFF8)==0xFCC0 && plus3) return read1770(addr);
+            if (addr==0xFCC0 && firstbyte) return readfirstbyte();
+            if (plus1)
+            {
+                    if (addr==0xFC70) return readadc();
+                    if (addr==0xFC72) return getplus1stat();
+            }
+            if (addr>=0xFC60 && addr<=0xFC6F && plus1) return readserial(addr);
+//          if ((addr&~0x1F)==0xFC20) return readsid(addr);
+
+            /* Allow the JIM paging register to be read if enabled directly or
+               indirectly. */
+            if (enable_jim && (addr == 0xfcff))
+                return jim_page;
+
+            return addr>>8;
+        }
+        case 0xFD00: /* Paged RAM exposed in page FD */
+        {
+            if (enable_jim) {
+                //fprintf(stdout, "FD: (%02x) %04x %02x\n", jim_page, addr, jim_ram[jim_page][addr & 0xff]);
+                return jim_ram[jim_page & 0x7f][addr & 0xff];
+            }else
                 return addr>>8;
         }
-        if ((addr&0xFF00)==0xFE00) return readula(addr);
+        case 0xFE00:
+            return readula(addr);
+        default:
+            break;
+        }
         if (mrb) return mrbos[addr&0x3FFF];
         return os[addr&0x3FFF];
 }
@@ -181,13 +262,25 @@ void writemem(uint16_t addr, uint8_t val)
         }
         if (addr<0xC000)
         {
-                if (extrom && rombank==0xD && (addr&0x2000)) sndrom[addr&0x3FFF]=val;
-                if (extrom && rombank==0x3 && plus3 && dfsena) dfs[addr&0x3FFF]=val;
+                if (extrom && rombank==SOUND_BANK && (addr&0x2000)) sndrom[addr&0x3FFF]=val;
+                if (extrom && rombank==DFS_BANK && plus3 && dfsena) dfs[addr&0x3FFF]=val;
                 if (extrom && rombank==0x6) { ram6[addr&0x3FFF]=val; usedrom6=1; }
         }
-        if ((addr&0xFF00)==0xFE00) writeula(addr,val);
+        switch (addr & 0xFF00) {
+        case 0xFE00:
+            writeula(addr,val);
+            break;
+        case 0xFD00:    /* Paged RAM exposed in page FD */
+            //fprintf(stdout, "FD: (%02x) %04x %02x %02x\n", jim_page, addr, jim_ram[jim_page][addr & 0xff], val);
+            if (enable_jim)
+                jim_ram[jim_page & 0x7f][addr & 0xff] = val;
+            break;
+        default:
+            break;
+        }
         if ((addr&0xFFF8)==0xFCC0 && plus3) write1770(addr,val);
 //        if ((addr&~0x1F)==0xFC20) writesid(addr,val);
+
         if (addr==0xFC98)
         {
 //                rpclog("FC98 write %02X\n",val);
@@ -215,6 +308,22 @@ void writemem(uint16_t addr, uint8_t val)
         if (addr==0xFC70 && plus1) writeadc(val);
         if (addr>=0xFC60 && addr<=0xFC6F && plus1) return writeserial(addr, val);
         if (addr==0xFC71 && plus1) writeparallel(val);
+        /* The Mega Games Cartridge uses FC00 to select pairs of 16K banks in
+           the two sets of ROMs. */
+        if (enable_mgc && (addr == 0xfc00)) {
+            fprintf(stderr, "bank = %i\n", val); banks[0] = val; banks[1] = val;
+        }
+        /* DB: My cartridge uses FC73 to select 32K regions in a flash ROM.
+           For convenience we use the same paired 16K ROM arrangement as for
+           the MGC. */
+        if (enable_db_flash_cartridge && (addr == 0xfc73)) {
+            fprintf(stderr, "bank = %i\n", val); banks[0] = val; banks[1] = val;
+        }
+        /* Support the JIM paging register when enabled directly or indirectly. */
+        if (enable_jim && (addr == 0xfcff)) {
+            jim_page = val;
+            //fprintf(stdout, "JIM: %02x pc=%04x (&f4)=%02x\n", jim_page, pc, ram[0xf4]);
+        }
 }
 
 int keys[2][14][4]=
