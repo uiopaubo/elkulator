@@ -2,6 +2,9 @@ Parallel port emulation is provided by handling writes to address &FC71 when
 the Plus 1 is enabled. This document describes the extent of the support and
 current limitations, and it should be updated as this support evolves.
 
+Using Parallel Port Emulation
+-----------------------------
+
 To use these emulation features, make sure that the plus1.rom file is present
 in the roms directory and that the Plus 1 is enabled in the elk.cfg
 configuration file as follows:
@@ -12,26 +15,34 @@ By default, parallel output is sent to Elkulator's standard output stream. The
 -parallel option should be omitted and Elkulator run with any other desired
 options.
 
-To interact with the emulated system over a socket connection, a simple client
-program is provided that can be run as follows:
+To interact with the emulated system over a parallel port connection, a simple
+relay program is provided that can be run as follows:
 
-  tools/serial_client.py
+  tools/io_relay.py
 
-This will output the name of a file to be used to connect the client with
+Or by specifying the relay mode explicitly:
+
+  tools/io_relay.py --console
+
+This will output the name of a file to be used to connect the relay with
 Elkulator. For example:
 
   Waiting for connection at: /tmp/tmpIIrGMc
 
 Alternatively, a filename can be indicated as follows:
 
-  tools/serial_client.py xxx
+  tools/io_relay.py xxx
+
+Or by specifying the relay mode explicitly:
+
+  tools/io_relay.py --console xxx
 
 Elkulator should be run with the -parallel option indicating the appropriate
 filename. For example:
 
   ./elkulator -parallel xxx
 
-If Elkulator cannot connect to the client, it will start up successfully but
+If Elkulator cannot connect to the relay, it will start up successfully but
 report an error. For example:
 
   Failed to connect to communications socket: No such file or directory
@@ -48,10 +59,11 @@ In the emulated Electron, the following commands are useful:
 The parallel printer is usually the default selection for printing, and line
 feed suppression is usually enabled by default.
 
-Currently, the serial client performs end-of-line character conversion to
+In console mode, the serial relay performs end-of-line character conversion to
 simplify printer configuration.
 
-----
+Implementation Notes
+--------------------
 
 Support for parallel communications is found in the following files:
 

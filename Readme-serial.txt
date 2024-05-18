@@ -3,32 +3,43 @@ receiver/transmitter (DUART) device supported by the Plus 1 Electron Expansion
 ROM. This document describes the extent of the support and current
 limitations, and it should be updated as this support evolves.
 
+Using Serial Port Emulation
+---------------------------
+
 To use these emulation features, make sure that the plus1.rom file is present
 in the roms directory and that the Plus 1 is enabled in the elk.cfg
 configuration file as follows:
 
   plus1 = 1
 
-To interact with the emulated system over a serial connection, a simple client
+To interact with the emulated system over a serial connection, a simple relay
 program is provided that can be run as follows:
 
-  tools/serial_client.py
+  tools/io_relay.py
 
-This will output the name of a file to be used to connect the client with
+Or by specifying the relay mode explicitly:
+
+  tools/io_relay.py --console
+
+This will output the name of a file to be used to connect the relay with
 Elkulator. For example:
 
   Waiting for connection at: /tmp/tmpIIrGMc
 
 Alternatively, a filename can be indicated as follows:
 
-  tools/serial_client.py xxx
+  tools/io_relay.py xxx
+
+Or by specifying the relay mode explicitly:
+
+  tools/io_relay.py --console xxx
 
 Elkulator should be run with the -serial option indicating the appropriate
 filename. For example:
 
   ./elkulator -serial xxx
 
-If Elkulator cannot connect to the client, it will start up successfully but
+If Elkulator cannot connect to the relay, it will start up successfully but
 report an error. For example:
 
   Failed to connect to communications socket: No such file or directory
@@ -42,7 +53,7 @@ argument. For example:
 In the emulated Electron, the following commands are useful:
 
   *FX 2,1 - enables the RS423 input stream, disabling the keyboard, with the
-            client being needed for further input
+            relay being needed for further input
 
   *FX 3,1 - enables the RS423 output stream along with the VDU output
 
@@ -51,10 +62,29 @@ In the emulated Electron, the following commands are useful:
   *FX 5,2 - selects the serial printer which can then be enabled using Ctrl-B
             or VDU 2, and disabled using Ctrl-C or VDU 3
 
-Currently, the serial client performs end-of-line character conversion to
+In console mode, the serial relay performs end-of-line character conversion to
 permit its use as a simple console and to simplify printer configuration.
 
-----
+Telnet Relay Support
+--------------------
+
+The relay also supports telnet. To connect a telnet server to Elkulator,
+specify the appropriate mode, together with the host and port details of the
+telnet server, along with a suitable filename (as shown above).
+
+Some examples:
+
+  tools/io_relay.py --telnet nightowlbbs.ddns.net 6400 xxx
+
+  tools/io_relay.py --telnet beebs.ddns.net 6502 xxx
+
+Note that the appropriate terminal software must be used to interact with
+online services. For Viewdata services, the Jafa Mode 7 Simulator ROM provides
+an appropriate terminal with full colour but a low-resolution text font,
+whereas the Pace Commstar ROM uses a monochrome 40-column mode.
+
+Implementation Notes
+--------------------
 
 Support for serial communications is found in the following files:
 
