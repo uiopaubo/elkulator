@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 """
 Communications relay program for use with Elkulator I/O port support.
@@ -27,6 +27,22 @@ from telnetlib import Telnet
 import select, tempfile
 import sys
 
+# Python 2/3 compatibility.
+
+def print_to(f, s):
+    f.write(s)
+    f.write("\n")
+
+EMPTY = b""
+CR = b"\r"
+LF = b"\n"
+
+stdin = sys.stdin
+stdout = sys.stdout
+
+if hasattr(stdout, "buffer"):
+    stdout = stdout.buffer
+
 # Conveniences.
 
 class Channel:
@@ -50,6 +66,9 @@ class Channel:
     def write(self, s):
         self.outp.write(self.converter(s))
 
+        if hasattr(self.outp, "flush"):
+            self.outp.flush()
+
 # Line ending conversion functions.
 
 def cr_to_lf(s):
@@ -59,7 +78,7 @@ def cr_to_lf(s):
     containing line feeds, replacing carriage returns.
     """
 
-    return s.replace("\n", "").replace("\r", "\n")
+    return s.replace(LF, EMPTY).replace(CR, LF)
 
 def lf_to_cr(s):
 
@@ -68,7 +87,7 @@ def lf_to_cr(s):
     containing carriage returns, replacing line feeds.
     """
 
-    return s.replace("\r", "").replace("\n", "\r")
+    return s.replace(CR, EMPTY).replace(LF, CR)
 
 def null(s):
 
@@ -92,7 +111,7 @@ def session(poller, channels):
         fds = poller.poll()
         for fd, status in fds:
             if status & (select.POLLHUP | select.POLLNVAL | select.POLLERR):
-                print >>sys.stderr, "Connection closed."
+                print_to(sys.stderr, "Connection closed.")
                 return
             elif status & select.POLLIN:
                 reader, writer = channel_map[fd]
@@ -135,7 +154,7 @@ def main():
         if not_mode:
             args.appendleft(mode)
 
-        print "Starting console using standard input and output..."
+        print_to(sys.stderr, "Starting console using standard input and output...")
 
     elif mode == "--telnet":
         host = "localhost"
@@ -147,15 +166,15 @@ def main():
         except IndexError:
             pass
 
-        print "Connecting to telnet address %s:%s..." % (host, port)
+        print_to(sys.stderr, "Connecting to telnet address %s:%s..." % (host, port))
 
     elif mode == "--help":
-        print help_text % sys.argv[0]
+        print_to(sys.stderr, help_text % sys.argv[0])
         sys.exit(1)
 
     else:
-        print "Mode not recognised:", mode
-        print help_text % sys.argv[0]
+        print_to(sys.stderr, "Mode not recognised:", mode)
+        print_to(sys.stderr, help_text % sys.argv[0])
         sys.exit(1)
 
     # Obtain the communications socket filename and remove any previous socket file.
@@ -178,16 +197,16 @@ def main():
 
     # Accept a connection.
 
-    print >>sys.stderr, "Waiting for connection at:", filename
+    print_to(sys.stderr, "Waiting for connection at: %s" % filename)
 
     c, addr = s.accept()
 
-    print >>sys.stderr, "Connection accepted."
+    print_to(sys.stderr, "Connection accepted.")
 
     # Employ file-like objects for reading and writing.
 
-    reader = c.makefile("r", 0)
-    writer = c.makefile("w", 0)
+    reader = c.makefile("rb", 0)
+    writer = c.makefile("wb", 0)
 
     # Obtain the relay destination and define the local and remote channels.
 
@@ -197,7 +216,7 @@ def main():
         local = Channel(reader, writer, null)
     else:
         server = None
-        remote = Channel(sys.stdin, sys.stdout, cr_to_lf)
+        remote = Channel(stdin, stdout, cr_to_lf)
         local = Channel(reader, writer, lf_to_cr)
 
     # Employ polling on the socket input and on a telnet connection.
