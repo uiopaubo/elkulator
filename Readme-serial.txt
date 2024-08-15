@@ -76,7 +76,13 @@ Some examples:
 
   tools/io_relay.py --telnet nightowlbbs.ddns.net 6400 xxx
 
+  tools/io_relay.py --telnet glasstty.com 6502 xxx
+
   tools/io_relay.py --telnet beebs.ddns.net 6502 xxx
+
+  tools/io_relay.py --telnet teletext.matrixnetwork.co.uk 6502 xxx
+
+  tools/io_relay.py --telnet fish.ccl4.org 23 xxx
 
 Note that the appropriate terminal software must be used to interact with
 online services. For Viewdata services, the Jafa Mode 7 Simulator ROM provides
